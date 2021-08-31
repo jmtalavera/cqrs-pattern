@@ -25,12 +25,6 @@
 				<version>${mule.maven.plugin.version}</version>
 				<extensions>true</extensions>
 				<configuration>
-				<sharedLibraries>
-                        <sharedLibrary>
-                            <groupId>com.mycompany</groupId>
-                            <artifactId>mysql-connector-java-8.0.11-0.1</artifactId>
-                        </sharedLibrary>
-                    </sharedLibraries>
                 <classifier>mule-application</classifier>
 								<cloudHubDeployment>
 								    <uri>https://anypoint.mulesoft.com</uri>
