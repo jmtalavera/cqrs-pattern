@@ -25,14 +25,20 @@
 				<version>${mule.maven.plugin.version}</version>
 				<extensions>true</extensions>
 				<configuration>
-				<sharedLibraries>
-                        <sharedLibrary>
-                            <groupId>com.mycompany</groupId>
-                            <artifactId>mysql-connector-java-8.0.11-0.1</artifactId>
-                        </sharedLibrary>
-                    </sharedLibraries>
-                <classifier>mule-application</classifier>
-                </configuration>
+                			<classifier>mule-application</classifier>
+					<cloudHubDeployment>
+					    <uri>https://anypoint.mulesoft.com</uri>
+					    <muleVersion>${mule.version}</muleVersion>
+					    <!-- Deploy User Parameter -->
+					    <username>${anypoint.username}</username>
+					    <password>${anypoint.password}</password>
+					    <!-- Environment Parameter -->
+					    <environment>${cloudhub.environment}</environment>
+					    <applicationName>${cloudhub.app}</applicationName>
+					    <businessGroup>${cloudhub.bg}</businessGroup>
+					    <workerType>${cloudhub.worker}</workerType>
+					</cloudHubDeployment>
+                		</configuration>
 			</plugin>
 		<plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -54,6 +60,11 @@
             <version>1.1.5</version>
             <classifier>mule-plugin</classifier>
         </dependency>
+	<dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+			<version>5.1.48</version>
+		</dependency>
 		<dependency>
             <groupId>com.mulesoft.connectors</groupId>
             <artifactId>mule-amqp-connector</artifactId>
@@ -91,11 +102,6 @@
             <artifactId>mule-db-connector</artifactId>
             <version>1.5.5</version>
             <classifier>mule-plugin</classifier>
-        </dependency>
-    	<dependency>
-            <groupId>com.mycompany</groupId>
-            <artifactId>mysql-connector-java-8.0.11-0.1</artifactId>
-            <version>0.1</version>
         </dependency>
     </dependencies>
 
