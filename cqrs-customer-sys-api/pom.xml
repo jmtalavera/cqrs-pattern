@@ -91,11 +91,6 @@
             <version>1.5.5</version>
             <classifier>mule-plugin</classifier>
         </dependency>
-    	<dependency>
-            <groupId>com.mycompany</groupId>
-            <artifactId>mysql-connector-java-8.0.11-0.1</artifactId>
-            <version>0.1</version>
-        </dependency>
     </dependencies>
 
 	<repositories>
