@@ -15,7 +15,7 @@
     default_asset_version: '1.0.0'
     task_id: -1
     projects_dir: '{{assets_root_dir}}/runtime_manager'
-    db_scripts_dir: 'db_scripts'
+    db_scripts_dir: 'docs/scripts'
     settings_file: '{{ projects_dir }}/settings.xml'
     runtime_version: '4.3.0'
     deploy_region: 'us-east-2'
@@ -169,7 +169,7 @@
           mysql_db:
             state: import
             name: '{{ mysql_database }}'
-            target: '{{ db_scripts_dir }}/example.sql'
+            target: '{{ db_scripts_dir }}/TableCreationScript.sql'
             login_host: '{{ mysql_hostname }}'
             login_port: '{{ mysql_port }}'
             login_user: '{{ mysql_app_username }}'
