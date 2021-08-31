@@ -140,7 +140,7 @@
       tags:
         - cloud_service
     - name: Provision a MySQL Instance on Cloud Services
-      include_tasks: scs_mysql.yml
+      include_tasks: scs_mysql.yaml
       tags:
         - cloud_service
     # MySQL tasks

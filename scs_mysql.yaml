@@ -1,0 +1,70 @@
+- name: Create Cloud Service
+  block:
+    - name: Set default endDate on 7 days for Cloud Service if it is notspecified
+      set_fact: 
+        scs_end_date: "{{ '%Y-%m-%d' | strftime( ( ansible_date_time.epoch | int ) + ( 86400 * 7 )  ) }}"
+      when: scs_end_date == None or scs_end_date == ''
+    - name: Create body for POST to SCS Service pAPI
+      set_fact:
+        post_body:
+          startDate: '{{ansible_date_time.iso8601}}'
+          endDate: '{{scs_end_date}}T00:00:00Z'
+          providerId: 1
+          serviceId: 1
+          name: '{{scs_name}}'
+          data:
+          - fieldName: 'mysqlUser'
+            fieldValue: '{{mysql_app_username}}'
+          - fieldName: 'mysqlPassword'
+            fieldValue: '{{mysql_app_password}}'
+          - fieldName: 'mysqlRootPassword'
+            fieldValue: '{{mysql_root_password}}'
+          - fieldName: 'mysqlDatabase'
+            fieldValue: '{{mysql_database}}'
+          - fieldName: 'service:type'
+            fieldValue: 'NodePort'
+    - debug:
+        msg: "{{ post_body }}"
+    - name: Execute POST call to SCS Service pAPI
+      uri:
+        url: '{{scs_instances_url}}?username={{scs_username}}'
+        validate_certs: False
+        method: POST
+        body_format: json
+        return_content: yes
+        headers:
+          client_id: '{{cloud_console_client_id}}'
+          client_secret: '{{cloud_console_client_secret}}'
+        body: "{{ post_body }}"
+        status_code: 201
+        timeout: 60
+      register: creation_response
+    - name: Get MySQL Cloud Service Port
+      set_fact:
+        mysql_port: '{{creation_response.json.serviceInstanceValues.port}}'
+    #- name: Print CS response
+    #  debug:
+    #    msg: 
+    #      - '{{creation_response}}'
+    #      - '{{mysql_port}}'
+    #
+    # need to put this 5 mins sleep because Cloud Services returns RUNNING
+    # but the container is not ready
+    - name: Sleep for 300 seconds and continue with play
+      wait_for:
+        timeout: 300
+    - name: Wait for Cloud Service right status
+      uri:
+        url: '{{scs_instances_url}}/{{creation_response.json.id}}?username={{scs_username}}'
+        method: GET
+        headers:
+          client_id: '{{cloud_console_client_id}}'
+          client_secret: '{{cloud_console_client_secret}}'
+        return_content: yes
+        timeout: 60
+      register: result
+      until: result.json.status == 'RUNNING'
+      retries: 10 # wait 5 mins max
+      delay: 30
+  tags:
+    - cloud_service
