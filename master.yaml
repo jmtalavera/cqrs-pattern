@@ -1,0 +1,250 @@
+- name: Provision the CQRS Example
+  hosts: localhost
+  vars:
+    ap_username: 'bruce'
+    ap_password: 'wayne'
+    ap_host: 'anypoint.mulesoft.com'
+    bg_name: 'Demo'
+    bg_parent_id: ''
+    bg_capacity: '0.1'
+    bg_capacity_sandbox: '{{ bg_capacity }}'
+    bg_capacity_production: '0.0'
+    assets_root_dir: 'Demo'
+    env_name: 'Sandbox'
+    env_type: 'sandbox'
+    default_asset_version: '1.0.0'
+    task_id: -1
+    projects_dir: '{{assets_root_dir}}/runtime_manager'
+    db_scripts_dir: 'db_scripts'
+    settings_file: '{{ projects_dir }}/settings.xml'
+    runtime_version: '4.3.0'
+    deploy_region: 'us-east-2'
+    region_code: 'us-e2'
+    cloudhub_domain: 'cloudhub.io'
+    mysql_root_username: 'root'
+    mysql_root_password: 'toor'
+    # DB Username should be no longer that 16
+    mysql_database: 'ak-odata'
+    mysql_hostname: 'eksprod.tools.mulesoft.com'
+    mysql_port: '3306'
+    mysql_app_username: '{{ mysql_database }}'
+    mysql_app_password: ''
+    random_app_password: "{{ lookup('password', '/dev/null length=15 chars=ascii_letters') }}"
+    scs_service_papi_host: 'scs-services-papi-v1.us-e1.cloudhub.io'
+    scs_service_papi_endpoint: '/api/instances'
+    scs_username: 'demos@mulesoft.com'
+    scs_instances_url: 'https://{{scs_service_papi_host}}{{scs_service_papi_endpoint}}'
+    scs_end_date: '' # it expects the date in format '%Y-%m-%d'
+    scs_name: 'CQRS Example - Provisioning {{ task_id }}'
+    cloud_console_client_id: '1234'
+    cloud_console_client_secret: '5678'
+    deployments:
+      - { name: 'cqrs-customer-sys-api', application_name: 'cqrs-customer-sys-api-{{ task_id }}', project_dir: '{{ projects_dir }}/cqrs-customer-sys-api', jar_file: 'cqrs-customer-sys-api-1.0.0-mule-application.jar', mule_version: '{{ runtime_version }}', region: '{{ deploy_region }}', monitoring: true,
+          properties: ["mysql.host\\={{ mysql_hostname }}", "mysql.port\\={{ mysql_port }}", "mysql.database\\={{ mysql_database }}", "mysql.username\\={{ mysql_app_username }}", "mysql.password\\={{ mysql_app_password }}"] }
+  tasks:
+    - name: assert parameters
+      assert:
+        that:
+          - ap_username != "bruce"
+          - ap_password != "wayne"
+          - "{{ task_id | int > 0 }}"
+          - cloud_console_client_id != "1234"
+          - cloud_console_client_secret != "5678"
+          - scs_username != "demos@mulesoft.com"
+        msg: "Wrong or missing parameters"
+      tags:
+        - validation
+    - name: get access token from anypoint platform
+      ap_auth:
+        name: '{{ ap_username }}'
+        password: '{{ ap_password }}'
+        host: '{{ ap_host }}'
+      no_log: true
+      register: session
+      tags:
+        - authentication
+    # Create Business group
+    - name: Gather info about ['{{bg_name}}'] Business Group
+      ap_account_business_group_info:
+        name: '{{bg_name}}'
+        host: '{{ ap_host }}'
+        bearer: '{{ session.access_token }}'
+        parent_id: '{{bg_parent_id}}'
+        as_org_admin: false
+      register: target_bg
+      tags:
+        - infrastructure
+    - set_fact:
+        bg_id: '{{target_bg.id}}'
+        bg_client_id: '{{target_bg.client_id}}'
+        bg_client_secret: '{{target_bg.client_secret}}'
+      tags:
+        - infrastructure
+    - name: Set BG capacity per environment type
+      set_fact:
+        env_type: 'production'
+        bg_capacity_sandbox: '0.0'
+        bg_capacity_production: '{{ bg_capacity }}'
+      when: (bg_id == None or bg_id == '') and (env_name == 'Production')
+    - name: Create ['{{ bg_name }}'] business group
+      ap_account_business_group:
+        name: '{{ bg_name }}'
+        state: 'present'
+        host: '{{ ap_host }}'
+        bearer: '{{ session.access_token }}'
+        create_environments: true
+        parent_id: '{{ bg_parent_id}}'
+        vcores_sandbox: '{{ bg_capacity_sandbox }}'
+        vcores_production: '{{ bg_capacity_production }}'
+      register: created_bg
+      retries: 2
+      delay: 10
+      until: created_bg is not failed
+      when: bg_id == None or bg_id == ''
+      tags:
+        - infrastructure
+    - set_fact:
+        bg_id: '{{created_bg.id}}'
+        bg_client_id: '{{created_bg.client_id}}'
+        bg_client_secret: '{{created_bg.client_secret}}'
+      when: bg_id == None or bg_id == ''
+      tags:
+        - infrastructure
+    # Create production environment, Sandbox and Design already exists
+    - name: Create '{{env_name}}' Environment
+      block:
+        - name: Select Environment Type
+          set_fact:
+            env_type: 'production'
+          when: env_name == 'Production'
+        - name: Create '{{env_name}}' Environment of type '{{env_type}}'
+          ap_account_environment:
+            bearer: '{{ session.access_token }}'
+            name: '{{ env_name }}'
+            state: 'present'
+            host: '{{ ap_host }}'
+            organization: '{{ bg_name }}'
+            type: '{{ env_type }}'
+          register: created_env
+        - name: Save environment client_id and client_secret
+          set_fact:
+            env_client_id: '{{ created_env.client_id }}'
+            env_client_secret: '{{ created_env.client_secret }}'
+      tags:
+        - infrastructure
+    # Cloud Services: Provision a MySQL Instance
+    - name: Generate random passwords for MySQL users
+      set_fact:
+        mysql_app_password: '{{ random_app_password }}'
+        mysql_root_password: '{{ random_app_password }}'
+      tags:
+        - cloud_service
+    - name: Provision a MySQL Instance on Cloud Services
+      include_tasks: scs_mysql.yml
+      tags:
+        - cloud_service
+    # MySQL tasks
+    - name: Create a database, a user and finally the required objects
+      block:
+        - name: Create a new database with name '{{ mysql_database }}'
+          mysql_db:
+            name: '{{ mysql_database }}'
+            state: present
+            login_host: '{{ mysql_hostname }}'
+            login_port: '{{ mysql_port }}'
+            login_user: '{{ mysql_root_username }}'
+            login_password: '{{ mysql_root_password }}'
+        - name: Create database user with indicated name and random password, with full permissions on created database
+          mysql_user:
+            name: '{{ mysql_database }}'
+            host: '%'
+            state: present
+            password: '{{ mysql_app_password }}'
+            priv: '{{ mysql_database }}.*:ALL'
+            login_host: '{{ mysql_hostname }}'
+            login_port: '{{ mysql_port }}'
+            login_user: '{{ mysql_root_username }}'
+            login_password: '{{ mysql_root_password }}'
+        - name: Import example.sql provided by Mulesoft with created user
+          mysql_db:
+            state: import
+            name: '{{ mysql_database }}'
+            target: '{{ db_scripts_dir }}/example.sql'
+            login_host: '{{ mysql_hostname }}'
+            login_port: '{{ mysql_port }}'
+            login_user: '{{ mysql_app_username }}'
+            login_password: '{{ mysql_app_password }}'
+      tags:
+        - mysql
+    # Build Step
+    - name: Add server dynamically to an empty settings.xml file
+      xml:
+        path: '{{ settings_file }}'
+        xpath: /ns:settings/ns:servers
+        namespaces:
+          ns: "http://maven.apache.org/SETTINGS/1.0.0"
+        input_type: xml
+        pretty_print: yes
+        add_children:
+          - "<server><id>anypoint-exchange</id><username>{{ap_username}}</username><password>{{ap_password}}</password></server>"
+      tags:
+        - build
+    - name: Build Package
+      command: "mvn clean package -DskipTests -s \"{{ settings_file }}\" -f \"{{ item.project_dir }}/pom.xml\" -Denv.bgId={{ bg_id }}"
+      loop: '{{ deployments }}'
+      tags:
+        - build
+    # Deploy Package
+    - name: Set Region Code for Cloudhub
+      block:
+        - set_fact: region_code="us-e1"
+          when: deploy_region == 'us-east-1'
+        - set_fact: region_code="us-e2"
+          when: deploy_region == 'us-east-2'
+        - set_fact: region_code="us-w1"
+          when: deploy_region == 'us-west-1'
+        - set_fact: region_code="us-w2"
+          when: deploy_region == 'us-west-2'
+        - set_fact: region_code="ir-e1"
+          when: deploy_region == 'eu-west-1'
+        - set_fact: region_code="de-c1"
+          when: deploy_region == 'eu-central-1'
+        - set_fact: region_code="uk-e1"
+          when: deploy_region == 'eu-west-2'
+      tags:
+        - deployment
+    - name: Deploy [{{ item.name }}] package
+      ap_runtime_mgr_cloudhub_application:
+        name: '{{ item.application_name }}'
+        state: 'present'
+        host: '{{ ap_host }}'
+        bearer: '{{ session.access_token }}'
+        organization: '{{ bg_name }}'
+        environment: '{{ env_name }}'
+        file: '{{ item.project_dir }}/target/{{ item.jar_file }}'
+        runtime: '{{ item.mule_version }}'
+        region: '{{ item.region }}'
+        properties: '{{ item.properties }}'
+        monitoring_enabled: '{{ item.monitoring }}'
+      register: exec_result
+      retries: 2
+      delay: 10
+      until: exec_result is not failed
+      loop: '{{ deployments }}'
+      tags:
+        - deployment
+    # Print Output
+    - name: prepare output to print
+      block:
+        - set_fact:
+            final_output:
+              - db_host: '{{ mysql_hostname }}'
+                db_port: '{{ mysql_port }}'
+                db_name: '{{ mysql_database }}'
+                db_user: '{{ mysql_app_username }}'
+                db_pass: '{{ mysql_app_password }}'
+                app_url: '{{ exec_result.results[0].url }}'
+        - debug:
+            msg: "{{ final_output }}"
+      tags:
+        - result
